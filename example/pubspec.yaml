@@ -1,0 +1,16 @@
+name: example
+description: A resortable_grid example project.
+
+version: 1.0.0
+
+publish_to: none
+
+environment:
+  sdk: ">=2.12.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  resortable_grid:
+    path: ../
+
