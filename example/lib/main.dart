@@ -19,6 +19,7 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       final item = items[oldIndex.group].removeAt(oldIndex.item);
       items[newIndex.group].insert(newIndex.item, item);
+      if (items[oldIndex.group].isEmpty) items.removeAt(oldIndex.group);
     });
   }
 

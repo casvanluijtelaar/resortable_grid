@@ -369,10 +369,9 @@ class SliverResortableGridState extends State<SliverResortableGrid>
     required PointerDownEvent event,
     required MultiDragGestureRecognizer recognizer,
   }) {
-
     assert(0 <= itemIndex && itemIndex < widget.itemCount[groupIndex]);
 
-    setState(() { 
+    setState(() {
       if (_dragInfo != null) {
         cancelReorder();
       }
@@ -405,7 +404,7 @@ class SliverResortableGridState extends State<SliverResortableGrid>
 
   void _unregisterItem(int group, int index, _ResortableItemState item) {
     final _ResortableItemState? currentItem = _items[group]![index];
-    if (currentItem == item)  _items[group]!.remove(index);
+    if (currentItem == item) _items[group]!.remove(index);
   }
 
   Drag? _dragStart(Offset position) {
@@ -602,7 +601,6 @@ class SliverResortableGridState extends State<SliverResortableGrid>
   }
 
   Offset _calculateNextDragOffset(int groupIndex, int itemIndex) {
-    
     if (_dragIndex!.group != groupIndex) return Offset.zero;
 
     int minPos = min(_dragIndex!.item, _insertIndex!.item);
@@ -624,7 +622,8 @@ class SliverResortableGridState extends State<SliverResortableGrid>
   }
 
   Widget _itemBuilder(BuildContext context, int group, int item) {
-    if (_dragInfo != null && _dragInfo!.groupindex == group &&
+    if (_dragInfo != null &&
+        _dragInfo!.groupindex == group &&
         item >= widget.itemCount[group]) {
       return SizedBox.fromSize(size: _dragInfo!.itemSize);
     }
