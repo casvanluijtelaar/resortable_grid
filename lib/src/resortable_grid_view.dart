@@ -224,7 +224,7 @@ import 'package:resortable_grid/src/resortable_grid.dart';
 ///  * [ScrollNotification] and [NotificationListener], which can be used to watch
 ///    the scroll position without using a [ScrollController].
 ///  * The [catalog of layout widgets](https://flutter.dev/widgets/layout/).
-class ResortableGridView<T> extends StatefulWidget {
+class ResortableGridView extends StatefulWidget {
   /// Creates a scrollable, 2D array of widgets with a custom
   /// [SliverGridDelegate].
   ///
@@ -246,10 +246,10 @@ class ResortableGridView<T> extends StatefulWidget {
     this.padding,
     required this.gridDelegate,
     required this.onReorder,
-    this.footerBuilder,
-    this.groupHeaderBuilder,
+    this.headerBuilder,
+    this.newGroupTargetBuilder,
     this.cacheExtent,
-    List<List<Widget>> children = const <List<Widget>>[],
+    List<List<Widget>> children = const [],
     this.semanticChildCount,
     this.dragStartBehavior = DragStartBehavior.start,
     this.clipBehavior = Clip.hardEdge,
@@ -258,13 +258,9 @@ class ResortableGridView<T> extends StatefulWidget {
     this.scrollController,
     this.anchor = 0.0,
     this.proxyDecorator,
-  })  : assert(
-          children
-              .every((List<Widget> group) => group.every((w) => w.key != null)),
-          'All children of this widget must have a key.',
-        ),
-        itemBuilder = ((BuildContext context, int g, int i) => children[g][i]),
-        itemCount = children.map((e) => e.length).toList(),
+  })  : itemBuilder = ((BuildContext context, ResortableIndex index) =>
+            children[index.group][index.item]),
+        itemCount = children.map((g) => g.length).toList(),
         super(key: key);
 
   /// Creates a scrollable, 2D array of widgets that are created on demand.
@@ -299,8 +295,8 @@ class ResortableGridView<T> extends StatefulWidget {
     required this.itemBuilder,
     required this.itemCount,
     required this.onReorder,
-    this.groupHeaderBuilder,
-    this.footerBuilder,
+    this.headerBuilder,
+    this.newGroupTargetBuilder,
     this.cacheExtent,
     this.semanticChildCount,
     this.dragStartBehavior = DragStartBehavior.start,
@@ -338,13 +334,13 @@ class ResortableGridView<T> extends StatefulWidget {
     this.padding,
     required int crossAxisCount,
     required this.onReorder,
-    this.groupHeaderBuilder,
-    this.footerBuilder,
+    this.headerBuilder,
+    this.newGroupTargetBuilder,
     double mainAxisSpacing = 0.0,
     double crossAxisSpacing = 0.0,
     double childAspectRatio = 1.0,
     this.cacheExtent,
-    List<List<Widget>> children = const <List<Widget>>[],
+    List<List<Widget>> children = const [],
     this.semanticChildCount,
     this.dragStartBehavior = DragStartBehavior.start,
     this.keyboardDismissBehavior = ScrollViewKeyboardDismissBehavior.manual,
@@ -359,13 +355,9 @@ class ResortableGridView<T> extends StatefulWidget {
           crossAxisSpacing: crossAxisSpacing,
           childAspectRatio: childAspectRatio,
         ),
-        assert(
-          children
-              .every((List<Widget> group) => group.every((w) => w.key != null)),
-          'All children of this widget must have a key.',
-        ),
-        itemBuilder = ((BuildContext context, int g, int i) => children[g][i]),
-        itemCount = children.map((e) => e.length).toList(),
+        itemBuilder = ((BuildContext context, ResortableIndex index) =>
+            children[index.group][index.item]),
+        itemCount = children.map((g) => g.length).toList(),
         super(key: key);
 
   /// Creates a scrollable, 2D array of widgets with tiles that each have a
@@ -393,13 +385,13 @@ class ResortableGridView<T> extends StatefulWidget {
     this.padding,
     required double maxCrossAxisExtent,
     required this.onReorder,
-    this.groupHeaderBuilder,
-    this.footerBuilder,
+    this.headerBuilder,
+    this.newGroupTargetBuilder,
     double mainAxisSpacing = 0.0,
     double crossAxisSpacing = 0.0,
     double childAspectRatio = 1.0,
     this.cacheExtent,
-    List<List<Widget>> children = const <List<Widget>>[],
+    List<List<Widget>> children = const [],
     this.semanticChildCount,
     this.dragStartBehavior = DragStartBehavior.start,
     this.keyboardDismissBehavior = ScrollViewKeyboardDismissBehavior.manual,
@@ -414,13 +406,9 @@ class ResortableGridView<T> extends StatefulWidget {
           crossAxisSpacing: crossAxisSpacing,
           childAspectRatio: childAspectRatio,
         ),
-        assert(
-          children
-              .every((List<Widget> group) => group.every((w) => w.key != null)),
-          'All children of this widget must have a key.',
-        ),
-        itemBuilder = ((BuildContext context, int g, int i) => children[g][i]),
-        itemCount = children.map((e) => e.length).toList(),
+        itemBuilder = ((BuildContext context, ResortableIndex index) =>
+            children[index.group][index.item]),
+        itemCount = children.map((g) => g.length).toList(),
         super(key: key);
 
   /// A delegate that controls the layout of the children within the [ResortableGridView].
@@ -477,33 +465,106 @@ class ResortableGridView<T> extends StatefulWidget {
   final EdgeInsetsGeometry? padding;
   final int? semanticChildCount;
 
-  final SortableWidgetBuilder itemBuilder;
+  /// TODO: macro comment
+  final ResortableWidgetBuilder itemBuilder;
 
+  /// TODO: macro comment
   final List<int> itemCount;
 
-  final ResortCallback onReorder;
+  /// TODO: macro comment
+  final ResortableCallback onReorder;
 
+  /// TODO: macro comment
   final ResortableItemProxyDecorator? proxyDecorator;
 
-  final GroupHeaderBuilder? groupHeaderBuilder;
-  final FooterWidgetBuilder? footerBuilder;
+  final ResortableHeaderBuilder? headerBuilder;
+
+  final WidgetBuilder? newGroupTargetBuilder;
 
   @override
   _ResortableGridViewState createState() => _ResortableGridViewState();
 }
 
 class _ResortableGridViewState extends State<ResortableGridView> {
-  Widget _itemBuilder(BuildContext context, int groupIndex, int itemIndex) {
-    final Widget item = widget.itemBuilder(context, groupIndex, itemIndex);
+  Widget _wrapWithSemantics(Widget child, ResortableIndex index) {
+    void reorder(ResortableIndex startIndex, ResortableIndex endIndex) {
+      if (startIndex != endIndex) {
+        widget.onReorder(startIndex, endIndex);
+      }
+    }
+
+    // First, determine which semantics actions apply.
+    final Map<CustomSemanticsAction, VoidCallback> semanticsActions =
+        <CustomSemanticsAction, VoidCallback>{};
+
+    // Create the appropriate semantics actions.
+    void moveToStart() => reorder(index, index.copyWith(item: 0));
+    void moveToEnd() =>
+        reorder(index, index.copyWith(item: widget.itemCount[index.group]));
+    void moveBefore() => reorder(index, index.copyWith(item: index.item - 1));
+    // To move after, we go to index+2 because we are moving it to the space
+    // before index+2, which is after the space at index+1.
+    void moveAfter() => reorder(index, index.copyWith(item: index.item + 2));
+
+    final MaterialLocalizations localizations =
+        MaterialLocalizations.of(context);
+
+    // If the item can move to before its current position in the grid.
+    if (index.item > 0) {
+      semanticsActions[
+              CustomSemanticsAction(label: localizations.reorderItemToStart)] =
+          moveToStart;
+      String reorderItemBefore = localizations.reorderItemUp;
+      if (widget.scrollDirection == Axis.horizontal) {
+        reorderItemBefore = Directionality.of(context) == TextDirection.ltr
+            ? localizations.reorderItemLeft
+            : localizations.reorderItemRight;
+      }
+      semanticsActions[CustomSemanticsAction(label: reorderItemBefore)] =
+          moveBefore;
+    }
+
+    // If the item can move to after its current position in the grid.
+    if (index.item < widget.itemCount[index.group] - 1) {
+      String reorderItemAfter = localizations.reorderItemDown;
+      if (widget.scrollDirection == Axis.horizontal) {
+        reorderItemAfter = Directionality.of(context) == TextDirection.ltr
+            ? localizations.reorderItemRight
+            : localizations.reorderItemLeft;
+      }
+      semanticsActions[CustomSemanticsAction(label: reorderItemAfter)] =
+          moveAfter;
+      semanticsActions[
+              CustomSemanticsAction(label: localizations.reorderItemToEnd)] =
+          moveToEnd;
+    }
+
+    // We pass toWrap with a GlobalKey into the item so that when it
+    // gets dragged, the accessibility framework can preserve the selected
+    // state of the dragging item.
+    //
+    // We also apply the relevant custom accessibility actions for moving the item
+    // up, down, to the start, and to the end of the grid.
+    return MergeSemantics(
+      child: Semantics(
+        customSemanticsActions: semanticsActions,
+        child: child,
+      ),
+    );
+  }
+
+  Widget _itemBuilder(BuildContext context, ResortableIndex index) {
+    final Widget item = widget.itemBuilder(context, index);
     assert(() {
       if (item.key == null) {
         throw FlutterError(
-          'Every item of ResortableGridView must have a key.',
+          'Every item of ReorderableListView must have a key.',
         );
       }
       return true;
     }());
 
+    final Widget itemWithSemantics = _wrapWithSemantics(item, index);
     final Key itemGlobalKey =
         _ResortableGridViewChildGlobalKey(item.key!, this);
 
@@ -513,24 +574,22 @@ class _ResortableGridViewState extends State<ResortableGridView> {
       case TargetPlatform.macOS:
         return ResortableGridDragStartListener(
           key: itemGlobalKey,
-          groupIndex: groupIndex,
-          itemIndex: itemIndex,
-          child: item,
+          index: index,
+          child: itemWithSemantics,
         );
       case TargetPlatform.iOS:
       case TargetPlatform.android:
       case TargetPlatform.fuchsia:
         return ResortableGridDelayedDragStartListener(
           key: itemGlobalKey,
-          groupIndex: groupIndex,
-          itemIndex: itemIndex,
-          child: item,
+          index: index,
+          child: itemWithSemantics,
         );
     }
   }
 
-  Widget _proxyDecorator(Widget child, int groupIndex, int itemIndex,
-      Animation<double> animation) {
+  Widget _proxyDecorator(
+      Widget child, ResortableIndex index, Animation<double> animation) {
     return AnimatedBuilder(
       animation: animation,
       builder: (BuildContext context, Widget? child) {
@@ -545,17 +604,19 @@ class _ResortableGridViewState extends State<ResortableGridView> {
     );
   }
 
-  Widget _groupHeaderBuilder(BuildContext context, int groupIndex) {
-    // has to be a sliver
-    return const SliverAppBar();
+  Widget _headerBuilder(BuildContext context, int groupIndex) {
+    return AppBar(title: Text('group: $groupIndex'));
   }
 
-  Widget _footerBuilder(BuildContext context) {
-    return const SizedBox(
-      width: double.maxFinite,
-      height: 200,
-      child: Center(
-        child: Text('new Group'),
+  Widget _newGroupTargetBuilder(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(32.0),
+      child: Card(
+        child: Container(
+          alignment: Alignment.center,
+          height: 100,
+          child: const Text('New group'),
+        ),
       ),
     );
   }
@@ -582,9 +643,9 @@ class _ResortableGridViewState extends State<ResortableGridView> {
         SliverPadding(
           padding: widget.padding ?? EdgeInsets.zero,
           sliver: SliverResortableGrid(
-            groupHeaderBuilder:
-                widget.groupHeaderBuilder ?? _groupHeaderBuilder,
-            footerBuilder: widget.footerBuilder ?? _footerBuilder,
+            headerBuilder: widget.headerBuilder ?? _headerBuilder,
+            newGroupTargetBuilder:
+                widget.newGroupTargetBuilder ?? _newGroupTargetBuilder,
             itemBuilder: _itemBuilder,
             gridDelegate: widget.gridDelegate,
             itemCount: widget.itemCount,

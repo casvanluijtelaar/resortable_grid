@@ -4,16 +4,35 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
-
-import 'package:collection/collection.dart';
 import 'package:sliver_tools/sliver_tools.dart';
+
+typedef ResortableCallback = void Function(
+  ResortableIndex oldIndex,
+  ResortableIndex newIndex,
+);
+
+typedef ResortableWidgetBuilder = Widget Function(
+  BuildContext context,
+  ResortableIndex index,
+);
+
+typedef ResortableHeaderBuilder = Widget Function(
+  BuildContext context,
+  int group,
+);
+
+typedef ResortableItemProxyDecorator = Widget Function(
+  Widget child,
+  ResortableIndex index,
+  Animation<double> animation,
+);
 
 /// {@template reorderable_grid_view.reorderable_grid}
 /// A scrolling container that allows the user to interactively reorder the
 /// grid items.
 ///
 /// This widget is similar to one created by [GridView.builder], and uses
-/// an [IndexedWidgetBuilder] to create each item.
+/// an [ResortableWidgetBuilder] to create each item.
 ///
 /// It is up to the application to wrap each child (or an internal part of the
 /// child such as a drag handle) with a drag listener that will recognize
@@ -34,16 +53,16 @@ import 'package:sliver_tools/sliver_tools.dart';
 ///  * [SliverResortableGrid], a sliver grid that allows the user to reorder
 ///    its items.
 /// {@endtemplate}
-class ResortableGrid<T> extends StatefulWidget {
+class ResortableGrid extends StatefulWidget {
   /// {@macro reorderable_grid_view.reorderable_grid}
   /// The [itemCount] must be greater than or equal to zero.
   const ResortableGrid({
     Key? key,
     required this.itemBuilder,
-    required this.groupHeaderBuilder,
-    this.footerBuilder,
     required this.itemCount,
     required this.onReorder,
+    required this.headerBuilder,
+    required this.newGroupTargetBuilder,
     required this.gridDelegate,
     this.proxyDecorator,
     this.padding,
@@ -66,22 +85,27 @@ class ResortableGrid<T> extends StatefulWidget {
   ///
   /// List items are only built when they're scrolled into view.
   ///
-  /// The [IndexedWidgetBuilder] index parameter indicates the item's
+  /// The [ResortableWidgetBuilder] index parameter indicates the item's
   /// position in the grid. The value of the index parameter will be between
   /// zero and one less than [itemCount]. All items in the grid must have a
   /// unique [Key], and should have some kind of listener to start the drag
   /// (usually a [ResortableGridDragStartListener] or
   /// [ResortableGridDelayedDragStartListener]).
-  final SortableWidgetBuilder itemBuilder;
+  final ResortableWidgetBuilder itemBuilder;
 
+  ///TODO comment
+  final ResortableHeaderBuilder headerBuilder;
+
+  /// {@macro flutter.widgets.reorderable_list.itemCount}
   final List<int> itemCount;
 
-  final ResortCallback onReorder;
+  ///TODO comment
+  final ResortableCallback onReorder;
 
+  ///TODO comment
   final ResortableItemProxyDecorator? proxyDecorator;
 
-  final FooterWidgetBuilder? footerBuilder;
-  final GroupHeaderBuilder groupHeaderBuilder;
+  final WidgetBuilder newGroupTargetBuilder;
 
   /// {@macro flutter.widgets.reorderable_list.padding}
   final EdgeInsetsGeometry? padding;
@@ -221,17 +245,12 @@ class ResortableGridState extends State<ResortableGrid> {
   /// [ResortableGridDragStartListener] or [ResortableGridDelayedDragStartListener]
   /// which call this for the application.
   void startItemDragReorder({
-    required int groupIndex,
-    required int itemIndex,
+    required ResortableIndex index,
     required PointerDownEvent event,
     required MultiDragGestureRecognizer recognizer,
   }) {
     _sliverResortableGridKey.currentState!.startItemDragReorder(
-      groupIndex: groupIndex,
-      itemIndex: itemIndex,
-      event: event,
-      recognizer: recognizer,
-    );
+        index: index, event: event, recognizer: recognizer);
   }
 
   /// Cancel any item drag in progress.
@@ -267,8 +286,8 @@ class ResortableGridState extends State<ResortableGrid> {
             key: _sliverResortableGridKey,
             gridDelegate: widget.gridDelegate,
             itemBuilder: widget.itemBuilder,
-            groupHeaderBuilder: widget.groupHeaderBuilder,
-            footerBuilder: widget.footerBuilder,
+            headerBuilder: widget.headerBuilder,
+            newGroupTargetBuilder: widget.newGroupTargetBuilder,
             itemCount: widget.itemCount,
             onReorder: widget.onReorder,
             proxyDecorator: widget.proxyDecorator,
@@ -279,72 +298,156 @@ class ResortableGridState extends State<ResortableGrid> {
   }
 }
 
-typedef GroupHeaderBuilder = Widget Function(
-    BuildContext context, int groupIndex);
-typedef FooterWidgetBuilder = Widget Function(BuildContext context);
-
-typedef SortableWidgetBuilder = Widget Function(
-    BuildContext context, int groupIndex, int itemIndex);
-
-typedef ResortCallback = void Function(IndexData oldItem, IndexData newItem);
-
+/// A sliver grid that allows the user to interactively reorder the grid items.
+///
+/// It is up to the application to wrap each child (or an internal part of the
+/// child) with a drag listener that will recognize the start of an item drag
+/// and then start the reorder by calling
+/// [SliverResortableGridState.startItemDragReorder]. This is most easily
+/// achieved by wrapping each child in a [ResortableGridDragStartListener] or
+/// a [ResortableGridDelayedDragStartListener]. These will take care of
+/// recognizing the start of a drag gesture and call the grid state's start
+/// item drag method.
+///
+/// This widget's [SliverResortableGridState] can be used to manually start an item
+/// reorder, or cancel a current drag that's already underway. To refer to the
+/// [SliverResortableGridState] either provide a [GlobalKey] or use the static
+/// [SliverResortableGrid.of] method from an item's build method.
+///
+/// See also:
+///
+///  * [ResortableGrid], a regular widget grid that allows the user to reorder
+///    its items.
 class SliverResortableGrid extends StatefulWidget {
+  /// Creates a sliver grid that allows the user to interactively reorder its
+  /// items.
+  ///
+  /// The [itemCount] must be greater than or equal to zero.
   const SliverResortableGrid({
     Key? key,
     required this.itemBuilder,
-    required this.groupHeaderBuilder,
-    this.footerBuilder,
+    required this.headerBuilder,
     required this.itemCount,
     required this.onReorder,
     required this.gridDelegate,
+    required this.newGroupTargetBuilder,
     this.proxyDecorator,
-  })  : assert(itemCount.length >= 0),
-        super(key: key);
+  }) : super(key: key);
 
-  final SortableWidgetBuilder itemBuilder;
-  final GroupHeaderBuilder groupHeaderBuilder;
-  final FooterWidgetBuilder? footerBuilder;
+  ///TODO comment
+  final ResortableWidgetBuilder itemBuilder;
+
+  ///TODO comment
+  final ResortableHeaderBuilder headerBuilder;
+
+  final WidgetBuilder newGroupTargetBuilder;
+
+  /// {@macro flutter.widgets.reorderable_list.itemCount}
   final List<int> itemCount;
-  final ResortCallback onReorder;
+
+  //TODO comment
+  final ResortableCallback onReorder;
+
+  /// {@macro flutter.widgets.reorderable_list.proxyDecorator}
   final ResortableItemProxyDecorator? proxyDecorator;
+
+  //TODO comment
   final SliverGridDelegate gridDelegate;
 
   @override
   SliverResortableGridState createState() => SliverResortableGridState();
 
+  /// The state from the closest instance of this class that encloses the given
+  /// context.
+  ///
+  /// This method is typically used by [SliverResortableGrid] item widgets to
+  /// start or cancel an item drag operation.
+  ///
+  /// If no [SliverResortableGrid] surrounds the context given, this function
+  /// will assert in debug mode and throw an exception in release mode.
+  ///
+  /// This method can be expensive (it walks the element tree).
+  ///
+  /// See also:
+  ///
+  ///  * [maybeOf], a similar function that will return null if no
+  ///    [SliverResortableGrid] ancestor is found.
   static SliverResortableGridState of(BuildContext context) {
-    final result = context.findAncestorStateOfType<SliverResortableGridState>();
-    assert(result != null, 'No SliverResortableGridState found above');
+    final SliverResortableGridState? result =
+        context.findAncestorStateOfType<SliverResortableGridState>();
+    assert(() {
+      if (result == null) {
+        throw FlutterError.fromParts(<DiagnosticsNode>[
+          ErrorSummary(
+            'SliverResortableGrid.of() called with a context that does not contain a SliverResortableGrid.',
+          ),
+          ErrorDescription(
+            'No SliverResortableGrid ancestor could be found starting from the context that was passed to SliverResortableGrid.of().',
+          ),
+          ErrorHint(
+            'This can happen when the context provided is from the same StatefulWidget that '
+            'built the SliverResortableGrid. Please see the SliverResortableGrid documentation for examples '
+            'of how to refer to an SliverResortableGrid object:\n'
+            '  https://api.flutter.dev/flutter/widgets/SliverResortableGridState-class.html',
+          ),
+          context.describeElement('The context used was'),
+        ]);
+      }
+      return true;
+    }());
     return result!;
   }
 
+  /// The state from the closest instance of this class that encloses the given
+  /// context.
+  ///
+  /// This method is typically used by [SliverResortableGrid] item widgets that
+  /// insert or remove items in response to user input.
+  ///
+  /// If no [SliverResortableGrid] surrounds the context given, this function
+  /// will return null.
+  ///
+  /// This method can be expensive (it walks the element tree).
+  ///
+  /// See also:
+  ///
+  ///  * [of], a similar function that will throw if no [SliverResortableGrid]
+  ///    ancestor is found.
   static SliverResortableGridState? maybeOf(BuildContext context) {
     return context.findAncestorStateOfType<SliverResortableGridState>();
   }
 }
 
-class IndexData {
-  final int group;
-  final int item;
-
-  IndexData(this.group, this.item);
-
-  @override
-  operator ==(Object? other) =>
-      other is IndexData && other.hashCode == hashCode;
-
-  @override
-  int get hashCode => group.hashCode ^ item.hashCode;
-}
-
+/// The state for a sliver grid that allows the user to interactively reorder
+/// the grid items.
+///
+/// An app that needs to start a new item drag or cancel an existing one
+/// can refer to the [SliverResortableGrid]'s state with a global key:
+///
+/// ```dart
+/// GlobalKey<SliverResortableGridState> gridKey = GlobalKey<SliverResortableGridState>();
+/// ...
+/// SliverResortableGrid(key: gridKey, ...);
+/// ...
+/// gridKey.currentState.cancelReorder();
+/// ```
+///
+/// [ResortableGridDragStartListener] and [ResortableGridDelayedDragStartListener]
+/// refer to their [SliverResortableGrid] with the static
+/// [SliverResortableGrid.of] method.
 class SliverResortableGridState extends State<SliverResortableGrid>
     with TickerProviderStateMixin {
-  final _items = <int, Map<int, _ResortableItemState>>{};
+  // Map of index -> child state used manage where the dragging item will need
+  // to be inserted.
+  final _items = <int, Map<int, _ReorderableItemState>>{};
+  final _newGroupTargetKey = GlobalKey();
 
   OverlayEntry? _overlayEntry;
-  IndexData? _dragIndex;
+
+  ResortableIndex? _dragIndex;
   _DragInfo? _dragInfo;
-  IndexData? _insertIndex;
+  ResortableIndex? _insertIndex;
+
   Offset? _finalDropPosition;
   MultiDragGestureRecognizer? _recognizer;
   bool _autoScrolling = false;
@@ -352,9 +455,9 @@ class SliverResortableGridState extends State<SliverResortableGrid>
   @override
   void didUpdateWidget(covariant SliverResortableGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    Function eq = const DeepCollectionEquality().equals;
-    if (!eq(widget.itemCount, oldWidget.itemCount)) cancelReorder();
+    if (widget.itemCount != oldWidget.itemCount) {
+      cancelReorder();
+    }
   }
 
   @override
@@ -363,21 +466,29 @@ class SliverResortableGridState extends State<SliverResortableGrid>
     super.dispose();
   }
 
+  /// Initiate the dragging of the item at [index] that was started with
+  /// the pointer down [event].
+  ///
+  /// The given [recognizer] will be used to recognize and start the drag
+  /// item tracking and lead to either an item reorder, or a cancelled drag.
+  ///
+  /// Most applications will not use this directly, but will wrap the item
+  /// (or part of the item, like a drag handle) in either a
+  /// [ResortableGridDragStartListener] or [ResortableGridDelayedDragStartListener]
+  /// which call this method when they detect the gesture that triggers a drag
+  /// start.
   void startItemDragReorder({
-    required int groupIndex,
-    required int itemIndex,
+    required ResortableIndex index,
     required PointerDownEvent event,
     required MultiDragGestureRecognizer recognizer,
   }) {
-    assert(0 <= itemIndex && itemIndex < widget.itemCount[groupIndex]);
-
+    assert(0 <= index.item && index.item < widget.itemCount[index.group]);
     setState(() {
       if (_dragInfo != null) {
         cancelReorder();
       }
-
-      if (_items[groupIndex]?.containsKey(itemIndex) ?? false) {
-        _dragIndex = IndexData(groupIndex, itemIndex);
+      if (getItemFromIndex(index) != null) {
+        _dragIndex = index;
         _recognizer = recognizer
           ..onStart = _dragStart
           ..addPointer(event);
@@ -387,34 +498,46 @@ class SliverResortableGridState extends State<SliverResortableGrid>
     });
   }
 
+  /// Cancel any item drag in progress.
+  ///
+  /// This should be called before any major changes to the item grid
+  /// occur so that any item drags will not get confused by
+  /// changes to the underlying grid.
+  ///
+  /// If a drag operation is in progress, this will immediately reset
+  /// the grid to back to its pre-drag state.
+  ///
+  /// If no drag is active, this will do nothing.
   void cancelReorder() {
     _dragReset();
   }
 
-  void _registerItem(_ResortableItemState item) {
-    if (!_items.containsKey(item.groupIndex)) _items[item.groupIndex] = {};
-    _items[item.groupIndex]![item.itemIndex] = item;
+  _ReorderableItemState? getItemFromIndex(ResortableIndex index) {
+    return _items[index.group]?[index.item];
+  }
 
-    if (item.itemIndex == _dragInfo?.itemIndex &&
-        item.groupIndex == _dragInfo?.groupindex) {
+  void _registerItem(_ReorderableItemState item) {
+    if (_items[item.index.group] == null) _items[item.index.group] = {};
+    _items[item.index.group]![item.index.item] = item;
+
+    if (item.index == _dragInfo?.index) {
       item.dragging = true;
       item.rebuild();
     }
   }
 
-  void _unregisterItem(int group, int index, _ResortableItemState item) {
-    final _ResortableItemState? currentItem = _items[group]![index];
-    if (currentItem == item) _items[group]!.remove(index);
+  void _unregisterItem(ResortableIndex index, _ReorderableItemState item) {
+    final _ReorderableItemState? currentItem = getItemFromIndex(index);
+    if (currentItem == item) _items.remove(index);
   }
 
   Drag? _dragStart(Offset position) {
     assert(_dragInfo == null);
-    final _ResortableItemState item =
-        _items[_dragIndex!.group]![_dragIndex!.item]!;
+    final _ReorderableItemState item = getItemFromIndex(_dragIndex!)!;
     item.dragging = true;
     item.rebuild();
 
-    _insertIndex = IndexData(item.groupIndex, item.itemIndex);
+    _insertIndex = item.index;
 
     _dragInfo = _DragInfo(
       item: item,
@@ -433,12 +556,10 @@ class SliverResortableGridState extends State<SliverResortableGrid>
     _overlayEntry = OverlayEntry(builder: _dragInfo!.createProxy);
     overlay.insert(_overlayEntry!);
 
-    for (final group in _items.entries) {
-      for (final childItem in group.value.values) {
-        if (childItem == item || !childItem.mounted) continue;
-        if (item.groupIndex != group.key) continue;
-
-        childItem.updateForGap(_insertIndex!.item, false);
+    for (final groupData in _items.values) {
+      for (final itemData in groupData.values) {
+        if (item == itemData || !itemData.mounted) continue;
+        itemData.updateForGap(_insertIndex!, false);
       }
     }
 
@@ -459,22 +580,28 @@ class SliverResortableGridState extends State<SliverResortableGrid>
 
   void _dragEnd(_DragInfo item) {
     setState(() {
+      
+      if (_insertIndex!.group > widget.itemCount.length - 1) {
+        _finalDropPosition = _newGrouptargetGeometry().center;
+        return;
+      }
+
+      //TODO: if it doesn't work match group
       if (_insertIndex!.item < widget.itemCount[_insertIndex!.group] - 1) {
         // Find the location of the item we want to insert before
-        _finalDropPosition =
-            _itemOffsetAt(_insertIndex!.group, _insertIndex!.item);
-      } else {
-        // Inserting into the last spot on the grid. If it's the only spot, put
-        // it back where it was. Otherwise, grab the second to last and move
-        // down by the gap.
-        final int itemIndex = _items[_insertIndex!.group]!.length > 1
-            ? _insertIndex!.item - 1
-            : _insertIndex!.item;
-
-        _finalDropPosition = item.itemSize.center(
-          _itemOffsetAt(_insertIndex!.group, itemIndex),
-        );
+        _finalDropPosition = _itemOffsetAt(_insertIndex!);
+        return;
       }
+
+      // Inserting into the last spot on the grid. If it's the only spot, put
+      // it back where it was. Otherwise, grab the second to last and move
+      // down by the gap.
+      final ResortableIndex index = _insertIndex!.copyWith(
+        item: _items[_insertIndex!.group]!.length > 1
+            ? _insertIndex!.item - 1
+            : _insertIndex!.item,
+      );
+      _finalDropPosition = item.itemSize.center(_itemOffsetAt(index));
     });
   }
 
@@ -489,51 +616,62 @@ class SliverResortableGridState extends State<SliverResortableGrid>
 
   void _dragReset() {
     setState(() {
-      if (_dragInfo == null) return;
-
-      if (_dragIndex != null &&
-          _items.containsKey(_dragIndex!.group) &&
-          _items[_dragIndex!.group]!.containsKey(_dragIndex!.item)) {
-        final _ResortableItemState dragItem =
-            _items[_dragIndex!.group]![_dragIndex!.item]!;
-        dragItem._dragging = false;
-        dragItem.rebuild();
-        _dragIndex = null;
+      if (_dragInfo != null) {
+        if (_dragIndex != null && _items.containsKey(_dragIndex)) {
+          final _ReorderableItemState dragItem = getItemFromIndex(_dragIndex!)!;
+          dragItem._dragging = false;
+          dragItem.rebuild();
+          _dragIndex = null;
+        }
+        _dragInfo?.dispose();
+        _dragInfo = null;
+        _resetItemGap();
+        _recognizer?.dispose();
+        _recognizer = null;
+        _overlayEntry?.remove();
+        _overlayEntry = null;
+        _finalDropPosition = null;
       }
-
-      _dragInfo?.dispose();
-      _dragInfo = null;
-      _resetItemGap();
-      _recognizer?.dispose();
-      _recognizer = null;
-      _overlayEntry?.remove();
-      _overlayEntry = null;
-      _finalDropPosition = null;
     });
   }
 
   void _resetItemGap() {
     for (final group in _items.values) {
-      for (final _ResortableItemState item in group.values) {
+      for (final item in group.values) {
         item.resetGap();
       }
     }
   }
 
+  Rect _newGrouptargetGeometry() {
+    final targetContext = _newGroupTargetKey.currentContext!;
+    final targetBox = targetContext.findRenderObject()! as RenderBox;
+
+    final targetSize = targetBox.size;
+    final targetPosition = targetBox.localToGlobal(Offset.zero);
+
+    return targetPosition & targetSize;
+  }
+
   void _dragUpdateItems() {
     assert(_dragInfo != null);
-    IndexData newIndex = _insertIndex!;
 
-    for (final group in _items.values) {
-      for (final _ResortableItemState item in group.values) {
-        if ((item.groupIndex == _dragIndex!.group &&
-                item.itemIndex == _dragIndex!.item) ||
-            !item.mounted) continue;
+    ResortableIndex newIndex = _insertIndex!;
 
-        final Rect geometry = item.targetGeometry();
+    /// if we are hovering over the 'new group' target, we want to set
+    /// the newIndex to the last group + 1, otherwise check if we are hovering
+    /// over an item and if so, set the newIndex to the item's index
+    if (_newGrouptargetGeometry().contains(_dragInfo!.dragPosition)) {
+      newIndex = ResortableIndex(widget.itemCount.length, 0);
+    } else {
+      for (final group in _items.values) {
+        for (final item in group.values) {
+          if (item.index == _dragIndex! || !item.mounted) continue;
 
-        if (geometry.contains(_dragInfo!.dragPosition)) {
-          newIndex = IndexData(item.groupIndex, item.itemIndex);
+          final Rect geometry = item.targetGeometry();
+          if (geometry.contains(_dragInfo!.dragPosition)) {
+            newIndex = item.index;
+          }
         }
       }
     }
@@ -542,9 +680,8 @@ class SliverResortableGridState extends State<SliverResortableGrid>
     _insertIndex = newIndex;
 
     for (final group in _items.values) {
-      for (final _ResortableItemState item in group.values) {
-        if (_insertIndex!.group != item.groupIndex) continue;
-        item.updateForGap(_insertIndex!.item, true);
+      for (final item in group.values) {
+        item.updateForGap(_insertIndex!, true);
       }
     }
   }
@@ -600,44 +737,43 @@ class SliverResortableGridState extends State<SliverResortableGrid>
     }
   }
 
-  Offset _calculateNextDragOffset(int groupIndex, int itemIndex) {
-    if (_dragIndex!.group != groupIndex) return Offset.zero;
+  ///TODO broken
+  Offset _calculateNextDragOffset(ResortableIndex index) {
+    if (index.group != _insertIndex!.group) return Offset.zero;
 
     int minPos = min(_dragIndex!.item, _insertIndex!.item);
     int maxPos = max(_dragIndex!.item, _insertIndex!.item);
 
-    if (itemIndex < minPos || itemIndex > maxPos) return Offset.zero;
+    if (index.item < minPos || index.item > maxPos) return Offset.zero;
 
     final int direction = _insertIndex!.item > _dragIndex!.item ? -1 : 1;
-    return _itemOffsetAt(groupIndex, itemIndex + direction) -
-        _itemOffsetAt(groupIndex, itemIndex);
+    return _itemOffsetAt(index.copyWith(item: index.item + direction)) -
+        _itemOffsetAt(index);
   }
 
-  Offset _itemOffsetAt(int groupIndex, int itemIndex) {
-    final box = _items[groupIndex]?[itemIndex]?.context.findRenderObject()
-        as RenderBox?;
-    if (box == null) return Offset.zero;
+  Offset _itemOffsetAt(ResortableIndex index) {
+    final item = getItemFromIndex(index);
+    if (item == null || !item.mounted) return Offset.zero;
 
+    final box = item.context.findRenderObject() as RenderBox;
     return box.localToGlobal(Offset.zero);
   }
 
-  Widget _itemBuilder(BuildContext context, int group, int item) {
-    if (_dragInfo != null &&
-        _dragInfo!.groupindex == group &&
-        item >= widget.itemCount[group]) {
+  Widget _itemBuilder(BuildContext context, ResortableIndex index) {
+    if (_dragInfo != null && index.item >= widget.itemCount[index.group]) {
       return SizedBox.fromSize(size: _dragInfo!.itemSize);
     }
 
-    final Widget child = widget.itemBuilder(context, group, item);
+    final Widget child = widget.itemBuilder(context, index);
     assert(child.key != null, 'All grid items must have a key');
 
-    final OverlayState overlay = Overlay.of(context)!;
-    return _ResortableItem(
-      key: _ResortableItemGlobalKey(child.key!, group, item, this),
-      groupIndex: group,
-      itemIndex: item,
-      capturedThemes:
-          InheritedTheme.capture(from: context, to: overlay.context),
+    return _ReorderableItem(
+      key: _ResortableItemGlobalKey(child.key!, index, this),
+      index: index,
+      capturedThemes: InheritedTheme.capture(
+        from: context,
+        to: Overlay.of(context)!.context,
+      ),
       child: child,
     );
   }
@@ -645,43 +781,49 @@ class SliverResortableGridState extends State<SliverResortableGrid>
   @override
   Widget build(BuildContext context) {
     assert(debugCheckHasOverlay(context));
+
     return MultiSliver(
       children: [
         for (var group = 0; group < widget.itemCount.length; group++) ...[
-          widget.groupHeaderBuilder(context, group),
+          // group header
+          SliverToBoxAdapter(child: widget.headerBuilder(context, group)),
+          // group grid
           SliverGrid(
             gridDelegate: widget.gridDelegate,
             delegate: SliverChildBuilderDelegate(
-              (ctx, item) => _itemBuilder(context, group, item),
-              childCount: widget.itemCount[group] +
-                  (_dragInfo != null && _dragInfo!.groupindex == group ? 1 : 0),
+              (ctx, item) => _itemBuilder(ctx, ResortableIndex(group, item)),
+              childCount: widget.itemCount[group],
             ),
           ),
-        ]
+        ],
+        SliverToBoxAdapter(
+          child: KeyedSubtree(
+            key: _newGroupTargetKey,
+            child: widget.newGroupTargetBuilder(context),
+          ),
+        ),
       ],
     );
   }
 }
 
-class _ResortableItem extends StatefulWidget {
-  const _ResortableItem({
+class _ReorderableItem extends StatefulWidget {
+  const _ReorderableItem({
     required Key key,
-    required this.itemIndex,
-    required this.groupIndex,
+    required this.index,
     required this.child,
     required this.capturedThemes,
   }) : super(key: key);
 
-  final int itemIndex;
-  final int groupIndex;
+  final ResortableIndex index;
   final Widget child;
   final CapturedThemes capturedThemes;
 
   @override
-  _ResortableItemState createState() => _ResortableItemState();
+  _ReorderableItemState createState() => _ReorderableItemState();
 }
 
-class _ResortableItemState extends State<_ResortableItem> {
+class _ReorderableItemState extends State<_ReorderableItem> {
   late SliverResortableGridState _listState;
 
   Offset _startOffset = Offset.zero;
@@ -689,8 +831,7 @@ class _ResortableItemState extends State<_ResortableItem> {
   AnimationController? _offsetAnimation;
 
   Key get key => widget.key!;
-  int get itemIndex => widget.itemIndex;
-  int get groupIndex => widget.groupIndex;
+  ResortableIndex get index => widget.index;
 
   bool get dragging => _dragging;
   set dragging(bool dragging) {
@@ -713,17 +854,15 @@ class _ResortableItemState extends State<_ResortableItem> {
   @override
   void dispose() {
     _offsetAnimation?.dispose();
-    _listState._unregisterItem(groupIndex, itemIndex, this);
+    _listState._unregisterItem(index, this);
     super.dispose();
   }
 
   @override
-  void didUpdateWidget(covariant _ResortableItem oldWidget) {
+  void didUpdateWidget(covariant _ReorderableItem oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.groupIndex != widget.groupIndex ||
-        oldWidget.itemIndex != widget.itemIndex) {
-      _listState._unregisterItem(
-          oldWidget.groupIndex, oldWidget.itemIndex, this);
+    if (oldWidget.index != widget.index) {
+      _listState._unregisterItem(oldWidget.index, this);
       _listState._registerItem(this);
     }
   }
@@ -742,7 +881,7 @@ class _ResortableItemState extends State<_ResortableItem> {
 
   @override
   void deactivate() {
-    _listState._unregisterItem(groupIndex, itemIndex, this);
+    _listState._unregisterItem(index, this);
     super.deactivate();
   }
 
@@ -755,11 +894,10 @@ class _ResortableItemState extends State<_ResortableItem> {
     return _targetOffset;
   }
 
-  void updateForGap(int gapIndex, bool animate) {
+  void updateForGap(ResortableIndex gapIndex, bool animate) {
     if (!mounted) return;
 
-    final newTargetOffset =
-        _listState._calculateNextDragOffset(groupIndex, itemIndex);
+    final Offset newTargetOffset = _listState._calculateNextDragOffset(index);
 
     if (newTargetOffset == _targetOffset) return;
     _targetOffset = newTargetOffset;
@@ -804,16 +942,14 @@ class _ResortableItemState extends State<_ResortableItem> {
   }
 
   Rect targetGeometry() {
-    final RenderBox itemRenderBox = context.findRenderObject()! as RenderBox;
-    final Offset itemPosition =
+    final itemRenderBox = context.findRenderObject()! as RenderBox;
+    final itemPosition =
         itemRenderBox.localToGlobal(Offset.zero) + _targetOffset;
     return itemPosition & itemRenderBox.size;
   }
 
   void rebuild() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 }
 
@@ -840,8 +976,7 @@ class ResortableGridDragStartListener extends StatelessWidget {
   const ResortableGridDragStartListener({
     Key? key,
     required this.child,
-    required this.groupIndex,
-    required this.itemIndex,
+    required this.index,
     this.enabled = true,
   }) : super(key: key);
 
@@ -850,8 +985,7 @@ class ResortableGridDragStartListener extends StatelessWidget {
   final Widget child;
 
   /// The index of the associated item that will be dragged in the grid.
-  final int groupIndex;
-  final int itemIndex;
+  final ResortableIndex index;
 
   /// Whether the [child] item can be dragged and moved in the grid.
   ///
@@ -883,8 +1017,7 @@ class ResortableGridDragStartListener extends StatelessWidget {
     final SliverResortableGridState? list =
         SliverResortableGrid.maybeOf(context);
     list?.startItemDragReorder(
-      groupIndex: groupIndex,
-      itemIndex: itemIndex,
+      index: index,
       event: event,
       recognizer: createRecognizer(),
     );
@@ -915,16 +1048,9 @@ class ResortableGridDelayedDragStartListener
   const ResortableGridDelayedDragStartListener({
     Key? key,
     required Widget child,
-    required int itemIndex,
-    required int groupIndex,
+    required ResortableIndex index,
     bool enabled = true,
-  }) : super(
-          key: key,
-          child: child,
-          groupIndex: groupIndex,
-          itemIndex: itemIndex,
-          enabled: enabled,
-        );
+  }) : super(key: key, child: child, index: index, enabled: enabled);
 
   @override
   MultiDragGestureRecognizer createRecognizer() {
@@ -938,7 +1064,7 @@ typedef _DragItemCallback = void Function(_DragInfo item);
 
 class _DragInfo extends Drag {
   _DragInfo({
-    required _ResortableItemState item,
+    required _ReorderableItemState item,
     Offset initialPosition = Offset.zero,
     this.onUpdate,
     this.onEnd,
@@ -947,10 +1073,10 @@ class _DragInfo extends Drag {
     this.proxyDecorator,
     required this.tickerProvider,
   }) {
-    final itemRenderBox = item.context.findRenderObject()! as RenderBox;
+    final RenderBox itemRenderBox =
+        item.context.findRenderObject()! as RenderBox;
     listState = item._listState;
-    itemIndex = item.itemIndex;
-    groupindex = item.groupIndex;
+    index = item.index;
     child = item.widget.child;
     capturedThemes = item.widget.capturedThemes;
     dragPosition = initialPosition;
@@ -967,8 +1093,7 @@ class _DragInfo extends Drag {
   final TickerProvider tickerProvider;
 
   late SliverResortableGridState listState;
-  late int itemIndex;
-  late int groupindex;
+  late ResortableIndex index;
   late Widget child;
   late Offset dragPosition;
   late Offset dragOffset;
@@ -1023,8 +1148,7 @@ class _DragInfo extends Drag {
     return capturedThemes.wrap(
       _DragItemProxy(
         listState: listState,
-        itemIndex: itemIndex,
-        groupIndex: groupindex,
+        index: index,
         size: itemSize,
         animation: _proxyAnimation!,
         position: dragPosition - dragOffset - _overlayOrigin(context),
@@ -1041,19 +1165,11 @@ Offset _overlayOrigin(BuildContext context) {
   return overlayBox.localToGlobal(Offset.zero);
 }
 
-typedef ResortableItemProxyDecorator = Widget Function(
-  Widget child,
-  int groupIndex,
-  int itemIndex,
-  Animation<double> animation,
-);
-
 class _DragItemProxy extends StatelessWidget {
   const _DragItemProxy({
     Key? key,
     required this.listState,
-    required this.groupIndex,
-    required this.itemIndex,
+    required this.index,
     required this.child,
     required this.position,
     required this.size,
@@ -1062,8 +1178,7 @@ class _DragItemProxy extends StatelessWidget {
   }) : super(key: key);
 
   final SliverResortableGridState listState;
-  final int groupIndex;
-  final int itemIndex;
+  final ResortableIndex index;
   final Widget child;
   final Offset position;
   final Size size;
@@ -1072,14 +1187,8 @@ class _DragItemProxy extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget proxyChild = proxyDecorator?.call(
-          child,
-          groupIndex,
-          itemIndex,
-          animation.view,
-        ) ??
-        child;
-
+    final Widget proxyChild =
+        proxyDecorator?.call(child, index, animation.view) ?? child;
     final Offset overlayOrigin = _overlayOrigin(context);
 
     return MediaQuery(
@@ -1091,12 +1200,10 @@ class _DragItemProxy extends StatelessWidget {
         builder: (BuildContext context, Widget? child) {
           Offset effectivePosition = position;
           final Offset? dropPosition = listState._finalDropPosition;
-
           if (dropPosition != null) {
             effectivePosition = Offset.lerp(dropPosition - overlayOrigin,
                 effectivePosition, Curves.easeOut.transform(animation.value))!;
           }
-
           return Positioned(
             left: effectivePosition.dx,
             top: effectivePosition.dy,
@@ -1120,13 +1227,11 @@ class _DragItemProxy extends StatelessWidget {
 // of the objects used to generate widgets.
 @optionalTypeArgs
 class _ResortableItemGlobalKey extends GlobalObjectKey {
-  const _ResortableItemGlobalKey(
-      this.subKey, this.groupIndex, this.itemIndex, this.state)
+  const _ResortableItemGlobalKey(this.subKey, this.index, this.state)
       : super(subKey);
 
   final Key subKey;
-  final int groupIndex;
-  final int itemIndex;
+  final ResortableIndex index;
   final SliverResortableGridState state;
 
   @override
@@ -1134,11 +1239,33 @@ class _ResortableItemGlobalKey extends GlobalObjectKey {
     if (other.runtimeType != runtimeType) return false;
     return other is _ResortableItemGlobalKey &&
         other.subKey == subKey &&
-        other.groupIndex == groupIndex &&
-        other.itemIndex == itemIndex &&
+        other.index == index &&
         other.state == state;
   }
 
   @override
-  int get hashCode => hashValues(subKey, groupIndex, itemIndex, state);
+  int get hashCode => hashValues(subKey, index, state);
+}
+
+/// class holding group and item index data
+class ResortableIndex {
+  const ResortableIndex(this.group, this.item);
+
+  final int group;
+  final int item;
+
+  ResortableIndex copyWith({int? group, int? item}) => ResortableIndex(
+        group ?? this.group,
+        item ?? this.item,
+      );
+
+  @override
+  String toString() => 'group: $group, item: $item';
+
+  @override
+  bool operator ==(Object? other) =>
+      other is ResortableIndex && other.group == group && other.item == item;
+
+  @override
+  int get hashCode => group.hashCode ^ item.hashCode;
 }

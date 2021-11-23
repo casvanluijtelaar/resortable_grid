@@ -15,10 +15,13 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   final items = List.generate(4, (_) => List.generate(10, (j) => j));
 
-  void onReorder(IndexData oldIndex, IndexData newIndex) {
+  void onReorder(ResortableIndex oldIndex, ResortableIndex newIndex) {
     setState(() {
       final item = items[oldIndex.group].removeAt(oldIndex.item);
-      items[newIndex.group].insert(newIndex.item, item);
+
+      if(newIndex.group >= items.length) items.add([item]);
+      else items[newIndex.group].insert(newIndex.item, item);
+      
       if (items[oldIndex.group].isEmpty) items.removeAt(oldIndex.group);
     });
   }
@@ -34,11 +37,11 @@ class _MyAppState extends State<MyApp> {
           ),
           onReorder: onReorder,
           itemCount: items.map((i) => i.length).toList(),
-          itemBuilder: (context, groupIndex, itemIndex) {
+          itemBuilder: (context, index) {
             return Card(
-              key: ValueKey('$groupIndex $itemIndex'),
+              key: ValueKey('${index.group} ${index.item}'),
               child: Center(
-                child: Text('item $itemIndex in group $groupIndex'),
+                child: Text('item ${index.group} in group ${index.item}'),
               ),
             );
           },
